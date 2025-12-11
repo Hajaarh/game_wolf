@@ -29,6 +29,10 @@ class GameMaster:
         self.wolves: List[Wolf] = []
         self.human_player: Optional[Player] = None
 
+        # Buffers utilisés par le frontend pour passer les actions humaines
+        self.pending_human_message: Optional[str] = None
+        self.pending_human_vote: Optional[int] = None
+        
         self.day_number: int = 0
         self.setup_players()
         self.distribute_roles()
