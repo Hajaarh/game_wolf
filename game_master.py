@@ -152,6 +152,16 @@ class GameMaster:
         for w in self.wolves:
             if hasattr(w, "mate_names"):
                 w.mate_names = [name for name in wolf_names if name != w.name]
+                
+    # --- ACTIONS HUMAINES PILOTÉES PAR LE FRONT ------------------------------
+
+    def receive_human_message(self, message: str) -> None:
+        """Enregistre le dernier message tapé par l'humain (appelé par le frontend)."""
+        self.pending_human_message = message
+
+    def register_human_vote(self, target_id: int) -> None:
+        """Enregistre l'id de la cible choisie par l'humain (appelé par le frontend)."""
+        self.pending_human_vote = target_id
 
     # --- UTILITAIRES D'ÉTAT --------------------------------------------------
 
@@ -271,37 +281,28 @@ class GameMaster:
     def discussion(self) -> None:
         """
         Discussion du jour :
-        - l'humain peut écrire un message
+        - l'humain peut écrire un message (reçu via receive_human_message)
         - chaque IA parle via talk()
         Historisation : tout le monde écoute tout le monde.
         """
         alive = self.alive_players()
 
-        if not self.human_player or not self.human_player.alive:
-            # Si l'humain est mort, seule la discussion IA a lieu
-            for p in alive:
-                if p.npc:
-                    msg = p.talk()
-                    if msg:
-                        print(f"{p.name}: {msg}")
-                        for other in alive:
-                            if other.id != p.id:
-                                other.listen(f"{p.name}: {msg}")
-            return
-
-        # Message humain
-        msg = input(f"\n{self.human_player.name}, que dis-tu au village ? ")
-        if msg.strip():
-            for p in alive:
-                if p.id != self.human_player.id:
-                    p.listen(f"{self.human_player.name}: {msg}")
+        # Message humain (si vivant et message fourni par le front)
+        if self.human_player and self.human_player.alive and self.pending_human_message:
+            msg = self.pending_human_message.strip()
+            if msg:
+                for p in alive:
+                    if p.id != self.human_player.id:
+                        p.listen(f"{self.human_player.name}: {msg}")
+            # reset du buffer
+            self.pending_human_message = None
 
         # Messages IA
         for p in alive:
             if p.npc:
                 txt = p.talk()
                 if txt:
-                    print(f"{p.name}: {txt}")
+                    # Ici plus de print : le front pourra lire l'historique si besoin
                     for other in alive:
                         if other.id != p.id:
                             other.listen(f"{p.name}: {txt}")
@@ -309,34 +310,23 @@ class GameMaster:
     def vote(self) -> Optional[Player]:
         """
         Phase de vote :
-        - l'humain vote via input (mode texte)
+        - l'humain vote via register_human_vote (appel front)
         - les IA votent via vote()
         Retourne le joueur condamné, ou None.
         """
         alive = self.alive_players()
-        print("\n--- VOTE ---")
-        print("Joueurs vivants :")
-        for p in alive:
-            print(f"- {p.id}: {p.name}")
-
         votes: List[int] = []
 
-        # Vote humain (si vivant)
-        if self.human_player and self.human_player.alive:
-            while True:
-                try:
-                    choice = int(input("Pour qui votes-tu ? (id) : "))
-                    target = next(
-                        (p for p in alive if p.id == choice and p.id != self.human_player.id),
-                        None,
-                    )
-                    if target is None:
-                        print("Choix invalide, recommence.")
-                        continue
-                    votes.append(target.id)
-                    break
-                except ValueError:
-                    print("Merci de taper un nombre.")
+        # Vote humain (si vivant et renseigné par le front)
+        if self.human_player and self.human_player.alive and self.pending_human_vote is not None:
+            target = next(
+                (p for p in alive if p.id == self.pending_human_vote and p.id != self.human_player.id),
+                None,
+            )
+            if target:
+                votes.append(target.id)
+            # reset du buffer
+            self.pending_human_vote = None
 
         # Votes IA
         for p in alive:
@@ -344,17 +334,14 @@ class GameMaster:
                 v = p.vote(alive)
                 if v:
                     votes.append(v.id)
-                    print(f"{p.name} vote contre {v.name}")
 
         if not votes:
-            print("Personne n'a voté.")
             return None
 
         counts = Counter(votes)
-        condemned_id, nb_votes = counts.most_common(1)[0]
+        condemned_id, _ = counts.most_common(1)[0]
         condemned = next(p for p in alive if p.id == condemned_id)
         condemned.alive = False
-        print(f"\n🔥 {condemned.name} est lynché(e) avec {nb_votes} voix.")
         return condemned
 
 
