@@ -1,4 +1,6 @@
 # player.py
+from __future__ import annotations
+
 from enum import Enum
 from typing import List, Optional
 
@@ -11,55 +13,40 @@ class Camp(Enum):
 class Player:
     """
     Représente un joueur (humain ou IA).
-
-    Attributs principaux :
-    - id        : identifiant numérique unique
-    - name      : nom affiché (pseudo ou nom IA)
-    - npc       : True si c'est une IA, False si humain
-    - camp      : Camp.VILLAGER ou Camp.WOLF
-    - alive     : bool vivant / mort
-    - history   : liste de messages textes pour le LLM
     """
 
     def __init__(self, player_id: int, name: str, npc: bool, camp: Camp) -> None:
-        self.id = player_id
-        self.name = name
-        self.npc = npc
-        self.camp = camp
+        self.id: int = player_id
+        self.name: str = name
+        self.npc: bool = npc
+        self.camp: Camp = camp
 
         self.alive: bool = True
         self.history: List[str] = []
 
-    # --- Cycle de vie nuit/jour ---
+    # Cycle nuit / jour
 
     def sleep(self) -> None:
-        """Appelé au début de la nuit."""
         self.history.append("Dors.")
 
     def wake_up(self) -> None:
-        """Appelé au lever du jour."""
         self.history.append("Se réveille.")
 
+    def night_reset(self) -> None:
+        """Hook vide pour l’instant."""
+        pass
+
     def listen(self, message: str) -> None:
-        """Ajoute un message entendu dans l'historique."""
         self.history.append(f"Entendu: {message}")
 
-    # --- Interaction jour : parler / voter ---
+    # Parole / vote
 
     def talk(self) -> str:
-        """
-        Message de jour pendant la discussion.
-        Surcharge côté IA LLM. Par défaut très simple.
-        """
         if self.npc:
             return f"Je suis {self.name}, je suis innocent !"
         return ""
 
     def vote(self, alive_players: List["Player"]) -> Optional["Player"]:
-        """
-        Vote par défaut pour une IA "bête" : random.
-        L'humain ne vote pas via cette méthode (géré par l'UI).
-        """
         if not self.npc:
             return None
 
@@ -76,13 +63,9 @@ class Wolf(Player):
     """Spécialisation Loup (camp WOLF)."""
 
     def __init__(self, player_id: int, name: str, npc: bool) -> None:
-        super().__init__(player_id, name, npc, camp=Camp.WOLF)
+        super().__init__(player_id=player_id, name=name, npc=npc, camp=Camp.WOLF)
 
     def night_action(self, villagers: List[Player]) -> Optional[Player]:
-        """
-        Choix d'une victime parmi les villageois vivants.
-        Version simple aléatoire (ou IA LLM pour LLMWolf).
-        """
         possibles = [v for v in villagers if v.alive]
         if not possibles:
             return None
@@ -95,7 +78,7 @@ class Wolf(Player):
 
 
 class Villager(Player):
-    """Villageois sans pouvoir spécial (pour l’instant)."""
+    """Villageois sans pouvoir spécial."""
 
     def __init__(self, player_id: int, name: str, npc: bool) -> None:
-        super().__init__(player_id, name, npc, camp=Camp.VILLAGER)
+        super().__init__(player_id=player_id, name=name, npc=npc, camp=Camp.VILLAGER)
