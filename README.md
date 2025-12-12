@@ -1,6 +1,4 @@
-# GAME_WOLVES
-
-# GAME WOLF
+# Werewolf
 
 Jeu de Loup-Garou jouable en ligne de commande, avec 1 humain et 9 IA.
 Toutes les IA (villageois et loups) sont contrôlées par un **LLM Groq** via l’API de texte.
