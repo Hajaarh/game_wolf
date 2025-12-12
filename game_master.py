@@ -23,30 +23,30 @@ class GameMaster:
     - human_player : référence vers le joueur humain
     """
 
-    def __init__(self) -> None:
+    def __init__(self, human_name: str | None = None) -> None:
         self.players: List[Player] = []
         self.villagers: List[Player] = []
         self.wolves: List[Wolf] = []
         self.human_player: Optional[Player] = None
 
-        # Buffers utilisés par le frontend pour passer les actions humaines
         self.pending_human_message: Optional[str] = None
         self.pending_human_vote: Optional[int] = None
-        
+
         self.day_number: int = 0
-        self.setup_players()
+        self.setup_players(human_name)
         self.distribute_roles()
 
     # --- SETUP ---------------------------------------------------------------
 
-    def setup_players(self) -> None:
+    def setup_players(self, human_name: str | None = None) -> None:
         """
         Crée 10 joueurs :
         - 1 humain (pseudo demandé à l'utilisateur)
         - 9 IA (noms générés par LLM)
         Les rôles (camp) sont gérés ensuite dans distribute_roles().
         """
-        human_name = input("Entre ton pseudo : ").strip() or "Humain"
+        if human_name is None:
+            human_name = input("Entre ton pseudo : ").strip() or "Humain"
 
         # Génération de 9 prénoms d'IA via Groq
         system_prompt = "You generate short, human first names suited for a social deduction game."
