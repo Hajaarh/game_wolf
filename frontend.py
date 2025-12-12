@@ -1,13 +1,14 @@
 # frontend.py
 import arcade
 import arcade.gui
-
+import math
 from game_master import GameMaster
 from player import Camp
 
+
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
-SCREEN_TITLE = "Loup-Garou - Among Us style"
+SCREEN_TITLE = "Loup-Garou"
 
 
 class WerewolfView(arcade.View):
@@ -25,7 +26,7 @@ class WerewolfView(arcade.View):
         self.current_phase = "night"
         self.phase_timer: float = 5.0  # 5 s de nuit au début
         self.campfire_sprite: arcade.Sprite | None = None  # pour l'animation
-        
+
         self.last_night_summary: dict | None = None
         self.last_day_summary: dict | None = None
 
@@ -33,6 +34,10 @@ class WerewolfView(arcade.View):
         self.chat_input: arcade.gui.UIInputText | None = None
         self.send_button: arcade.gui.UIFlatButton | None = None
         self.vote_buttons: list[arcade.gui.UIFlatButton] = []
+        # Sprites joueurs
+        self.player_sprites = arcade.SpriteList()
+        # SpriteList pour le feu de camp
+        self.campfire_list = arcade.SpriteList()
 
         # Message box courante (résumé nuit/jour)
         self.current_message_box: arcade.gui.UIMessageBox | None = None
@@ -43,12 +48,10 @@ class WerewolfView(arcade.View):
         # Sprites joueurs
         self.player_sprites = arcade.SpriteList()
 
-        # Textures ambiance
+        # Textures ambiance (mets des PNG vides si besoin)
         self.background_texture = arcade.load_texture(
-            "assets/backgrounds/meeting_room.png"
+            "assets/backgrounds/images.jpg"
         )
-        self.sun_texture = arcade.load_texture("assets/icons/sun_icon.png")
-        self.moon_texture = arcade.load_texture("assets/icons/moon_icon.png")
 
         # Crée les sprites joueurs + UI
         self._init_player_sprites()
@@ -56,16 +59,16 @@ class WerewolfView(arcade.View):
         self.setup_ui()
 
     # ------------------------------------------------------------------ INIT SPRITES
+
     def _init_campfire(self) -> None:
         """Sprite de feu de camp affiché seulement pendant la phase de vote."""
         self.campfire_sprite = arcade.Sprite(
             "assets/characters/free_campfire.png",
             scale=2.0,
         )
-        # Position au centre de la “table”
         self.campfire_sprite.center_x = SCREEN_WIDTH // 2
         self.campfire_sprite.center_y = SCREEN_HEIGHT // 2
-
+        self.campfire_list.append(self.campfire_sprite)
 
     def _init_player_sprites(self) -> None:
         """Crée un sprite par joueur, avec texture différente pour l'humain."""
@@ -86,7 +89,7 @@ class WerewolfView(arcade.View):
         """Configure les widgets de base (champ texte + bouton send)."""
         self.ui_manager.clear()
 
-        v_box = arcade.gui.UIBoxLayout()
+        v_box = arcade.gui.UIBoxLayout(space_between=10)
 
         self.chat_input = arcade.gui.UIInputText(
             text="",
@@ -94,7 +97,7 @@ class WerewolfView(arcade.View):
             height=40,
             text_color=arcade.color.WHITE,
         )
-        v_box.add(self.chat_input.with_space_around(bottom=10))
+        v_box.add(self.chat_input)
 
         self.send_button = arcade.gui.UIFlatButton(
             text="Send",
@@ -103,12 +106,15 @@ class WerewolfView(arcade.View):
         self.send_button.on_click = self.on_click_send  # type: ignore
         v_box.add(self.send_button)
 
-        anchor = arcade.gui.UIAnchorWidget(
+        # Utilise UIAnchorLayout (compat avec ta version d'Arcade)
+        anchor_layout = arcade.gui.UIAnchorLayout()
+        anchor_layout.add(
+            child=v_box,
             anchor_x="center_x",
             anchor_y="bottom",
-            child=v_box,
         )
-        self.ui_manager.add(anchor)
+
+        self.ui_manager.add(anchor_layout)
 
     # ------------------------------------------------------------------ PHASES
 
@@ -118,21 +124,27 @@ class WerewolfView(arcade.View):
     def on_draw(self):
         self.clear()
 
-        # Background
-        arcade.draw_lrwh_rectangle_textured(
-            0, 0,
-            SCREEN_WIDTH, SCREEN_HEIGHT,
-            self.background_texture,
+        # Background uni
+        arcade.draw_lrbt_rectangle_filled(
+            0,
+            SCREEN_WIDTH,
+            0,
+            SCREEN_HEIGHT,
+            arcade.color.DARK_SLATE_BLUE,
         )
 
         # Ambiance jour / nuit
         self.draw_day_night_overlay()
 
-        # Joueurs
+        # Dessin des sprites joueurs
+        self.player_sprites.draw()
+
+        # Infos sur les joueurs (noms, marqueurs)
         self.draw_players()
+
         # Feu de camp au centre pendant la cérémonie des votes
-        if self.current_phase == "day_vote" and self.campfire_sprite:
-            self.campfire_sprite.draw()
+        if self.current_phase == "day_vote":
+            self.campfire_list.draw()
 
         # Bandeau d'info
         self.draw_hud()
@@ -159,12 +171,10 @@ class WerewolfView(arcade.View):
     # ------------------------------------------------------------------ HUD / OVERLAYS
 
     def draw_hud(self) -> None:
-        """Affiche infos phase, timer, et compteur loups/villageois (facultatif)."""
-        # Phase
+        """Affiche infos phase et timer."""
         text = f"Phase: {self.current_phase}"
         arcade.draw_text(text, 10, SCREEN_HEIGHT - 30, arcade.color.WHITE, 16)
 
-        # Timer
         if self.current_phase in ("night", "day_discussion", "day_vote"):
             timer_text = f"Timer: {int(self.phase_timer)}s"
             arcade.draw_text(
@@ -175,30 +185,16 @@ class WerewolfView(arcade.View):
                 16,
             )
 
-
-
     def draw_day_night_overlay(self) -> None:
-        """Voile sombre + soleil / lune selon la phase."""
+        """Voile sombre pour la nuit."""
         if self.current_phase == "night":
-            # voile sombre
             color = (0, 0, 0, 160)
-            arcade.draw_lrtb_rectangle_filled(0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, color)
-            # lune
-            arcade.draw_lrwh_rectangle_textured(
-                SCREEN_WIDTH - 80,
-                SCREEN_HEIGHT - 80,
-                64,
-                64,
-                self.moon_texture,
-            )
-        else:
-            # jour : pas de voile, soleil
-            arcade.draw_lrwh_rectangle_textured(
-                SCREEN_WIDTH - 80,
-                SCREEN_HEIGHT - 80,
-                64,
-                64,
-                self.sun_texture,
+            arcade.draw_lrbt_rectangle_filled(
+                0,
+                SCREEN_WIDTH,
+                0,
+                SCREEN_HEIGHT,
+                color,
             )
 
     # ------------------------------------------------------------------ JOUEURS / LOUPS ALLIÉS
@@ -217,16 +213,17 @@ class WerewolfView(arcade.View):
         human_is_wolf = human is not None and human.camp == Camp.WOLF
 
         for i, p in enumerate(alive_players):
-            angle = 2 * 3.14159 * i / n
-            x = center_x + radius * arcade.math.cos(angle)
-            y = center_y + radius * arcade.math.sin(angle)
+            angle = 2 * math.pi * i / n
+            x = center_x + radius * math.cos(angle)
+            y = center_y + radius * math.sin(angle)
 
-            sprite = next(s for s in self.player_sprites if s.player_id == p.id)  
+            sprite = next(
+                s for s in self.player_sprites if s.player_id == p.id  # type: ignore
+            )
             sprite.center_x = x
             sprite.center_y = y
-            sprite.draw()
+            # plus de sprite.draw() : dessin via self.player_sprites.draw()
 
-            # Nom sous le perso
             arcade.draw_text(
                 p.name,
                 x - 30,
@@ -237,17 +234,16 @@ class WerewolfView(arcade.View):
                 align="center",
             )
 
-            # Indication visuelle spéciale si l'humain est loup
             if human_is_wolf:
-                # Si c'est l'humain loup lui-même
                 if human and p.id == human.id:
-                    # halo rouge autour de lui
                     arcade.draw_circle_outline(
-                        x, y, 30, arcade.color.RED, border_width=3
+                        x,
+                        y,
+                        30,
+                        arcade.color.RED,
+                        border_width=3,
                     )
-                # Si c'est un allié loup (autre que l'humain)
                 elif p.camp == Camp.WOLF:
-                    # petit marqueur de griffes au-dessus
                     arcade.draw_text(
                         "爪",
                         x - 6,
@@ -261,20 +257,18 @@ class WerewolfView(arcade.View):
     def draw_chat_panel(self) -> None:
         """Affiche les dernières lignes de chat en bas à gauche."""
         panel_height = 150
-        y0 = 80  # au-dessus de l'UI input
+        y0 = 80
         x0 = 20
 
-        # fond semi-translucide
-        arcade.draw_lrtb_rectangle_filled(
+        arcade.draw_lrbt_rectangle_filled(
             x0 - 10,
             x0 + 500,
-            y0 + panel_height,
             y0 - 10,
+            y0 + panel_height,
             (0, 0, 0, 150),
         )
 
-        # on affiche max 6 lignes
-        lines_to_show = self.chat_lines[-6:]
+        lines_to_show = self.chat_lines[-3:]
         for i, (is_human, text) in enumerate(lines_to_show):
             color = arcade.color.GOLD if is_human else arcade.color.LIGHT_GRAY
             arcade.draw_text(
@@ -286,12 +280,7 @@ class WerewolfView(arcade.View):
             )
 
     def append_chat_from_histories(self) -> None:
-        """
-        Lit les derniers messages dans l'historique des joueurs
-        et les pousse dans self.chat_lines avec la bonne couleur.
-        Hypothèse simple: on regarde le dernier message de chaque joueur
-        et on l'ajoute s'il n'est pas déjà présent.
-        """
+        """Ajoute le dernier message de chaque joueur au chat s'il est nouveau."""
         existing_texts = {line[1] for line in self.chat_lines}
         human = self.gm.human_player
 
@@ -302,7 +291,6 @@ class WerewolfView(arcade.View):
             if last_msg in existing_texts:
                 continue
 
-            # last_msg format: "Nom: texte" ou autre
             is_human = human is not None and p.id == human.id
             self.chat_lines.append((is_human, last_msg))
 
@@ -311,29 +299,26 @@ class WerewolfView(arcade.View):
     def update_night_phase(self) -> None:
         """Gestion de la nuit avec timer court + popup."""
         if self.last_night_summary is None:
-            # on exécute la logique de nuit une seule fois par phase
             self.last_night_summary = self.gm.night_phase()
-            self.show_message_box(self.last_night_summary["text"], title="La nuit est passée")
+            self.show_message_box(
+                self.last_night_summary["text"],
+                title="La nuit est passée",
+            )
 
-            # check fin de partie dès la nuit
             if not self.gm.game_state():
                 self.current_phase = "end"
                 return
 
         if self.phase_timer == 0.0:
-            # passage au jour
             self.current_phase = "day_discussion"
-            self.phase_timer = 60.0  # 60s de discussion
+            self.phase_timer = 60.0
             self.last_night_summary = None
 
     # ------------------------------------------------------------------ PHASE DISCUSSION
 
     def update_day_discussion(self) -> None:
-        """
-        Si le joueur ne parle pas avant la fin du timer, on passe quand même au vote.
-        """
+        """Si le joueur ne parle pas avant la fin du timer, on passe au vote."""
         if self.phase_timer == 0.0:
-            # passage forcé au vote
             self.current_phase = "day_vote"
             self.phase_timer = 25.0
 
@@ -345,57 +330,48 @@ class WerewolfView(arcade.View):
         msg = self.chat_input.text.strip() if self.chat_input else ""
         if msg:
             self.gm.receive_human_message(msg)
-            # lance la discussion (humain + IA)
             self.gm.discussion()
-
-            # Ajoute les nouveaux messages au chat
             self.append_chat_from_histories()
-
-            # on efface le champ
             if self.chat_input:
                 self.chat_input.text = ""
-
-        # Option: on peut laisser l'utilisateur envoyer plusieurs messages
-        # tant que le timer n'est pas écoulé. On ne passe au vote que quand
-        # le timer tombe à zéro (update_day_discussion).
 
     # ------------------------------------------------------------------ PHASE VOTE
 
     def update_day_vote(self) -> None:
-        """
-        Crée les boutons de vote et, si le timer atteint 0 sans vote humain,
-        déclenche quand même le vote (IA only ou IA + humain si déjà enregistré).
-        """
+        """Crée les boutons de vote et déclenche le vote auto en fin de timer."""
         if not self.vote_buttons:
             self.create_vote_buttons()
 
         if self.phase_timer == 0.0 and self.last_day_summary is None:
-            # pas de vote humain => pending_human_vote reste None
-            # mais on appelle quand même day_phase, donc les IA votent entre elles
             self.last_day_summary = self.gm.day_phase()
 
-            # Ajoute au chat un résumé du lynchage
             if self.last_day_summary["lynched_name"]:
                 self.chat_lines.append(
-                    (False, f"Système: {self.last_day_summary['lynched_name']} a été lynché.")
+                    (
+                        False,
+                        f"Système: {self.last_day_summary['lynched_name']} a été lynché.",
+                    )
                 )
             else:
                 self.chat_lines.append(
                     (False, "Système: Personne n'a été lynché.")
                 )
 
-            self.show_message_box(self.last_day_summary["text"], title="Vote du jour")
+            self.show_message_box(
+                self.last_day_summary["text"],
+                title="Vote du jour",
+            )
             self.after_day_phase()
 
     def create_vote_buttons(self) -> None:
         """Crée un bouton par joueur vivant pour la phase de vote."""
         self.vote_buttons.clear()
 
-        v_box = arcade.gui.UIBoxLayout()
+        v_box = arcade.gui.UIBoxLayout(space_between=5)
 
         for p in self.gm.alive_players():
             if self.gm.human_player and p.id == self.gm.human_player.id:
-                continue  # on ne peut pas voter pour soi-même
+                continue
 
             btn = arcade.gui.UIFlatButton(text=f"Vote {p.name}", width=200)
             btn.player_id = p.id  # type: ignore
@@ -405,14 +381,15 @@ class WerewolfView(arcade.View):
 
             btn.on_click = on_click  # type: ignore
             self.vote_buttons.append(btn)
-            v_box.add(btn.with_space_around(bottom=5))
+            v_box.add(btn)
 
-        anchor = arcade.gui.UIAnchorWidget(
+        anchor_layout = arcade.gui.UIAnchorLayout()
+        anchor_layout.add(
+            child=v_box,
             anchor_x="right",
             anchor_y="center_y",
-            child=v_box,
         )
-        self.ui_manager.add(anchor)
+        self.ui_manager.add(anchor_layout)
 
     def on_click_vote(self, player_id: int) -> None:
         """Quand l'utilisateur clique sur un bouton de vote."""
@@ -422,30 +399,33 @@ class WerewolfView(arcade.View):
         self.gm.register_human_vote(player_id)
         self.last_day_summary = self.gm.day_phase()
 
-        # Ajout au chat
         if self.last_day_summary["lynched_name"]:
             self.chat_lines.append(
-                (False, f"Système: {self.last_day_summary['lynched_name']} a été lynché.")
+                (
+                    False,
+                    f"Système: {self.last_day_summary['lynched_name']} a été lynché.",
+                )
             )
         else:
             self.chat_lines.append(
                 (False, "Système: Personne n'a été lynché.")
             )
 
-        self.show_message_box(self.last_day_summary["text"], title="Vote du jour")
+        self.show_message_box(
+            self.last_day_summary["text"],
+            title="Vote du jour",
+        )
         self.after_day_phase()
 
     def after_day_phase(self) -> None:
         """Nettoie les boutons de vote, remet l'UI de base, et passe à la phase suivante ou fin."""
-        # Nettoie les boutons de vote
         self.vote_buttons.clear()
         self.ui_manager.clear()
         self.setup_ui()
 
-        # Vérifie si la partie continue
         if self.gm.game_state():
             self.current_phase = "night"
-            self.phase_timer = 5.0  # 5s pour l'animation de nuit suivante
+            self.phase_timer = 5.0
             self.last_day_summary = None
         else:
             self.current_phase = "end"
@@ -463,23 +443,23 @@ class WerewolfView(arcade.View):
             height=200,
             message_text=message,
             buttons=["OK"],
-            callback=self.on_message_box_close,
             title=title,
         )
         self.current_message_box = message_box
         self.ui_manager.add(message_box)
 
     def on_message_box_close(self, button_text: str) -> None:
-        """Callback appelé quand on ferme un UIMessageBox."""
+        """Non utilisée par UIMessageBox dans cette version, gardée juste au cas où."""
         if self.current_message_box:
             self.current_message_box.kill()
             self.current_message_box = None
 
-    # ------------------------------------------------------------------ MAIN
+
+# ------------------------------------------------------------------ MAIN
 
 def main():
     window = arcade.Window(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
-    view = WerewolfView(human_name="Crewmate")  # plus tard: écran de saisie du pseudo
+    view = WerewolfView(human_name="Crewmate")
     window.show_view(view)
     arcade.run()
 
